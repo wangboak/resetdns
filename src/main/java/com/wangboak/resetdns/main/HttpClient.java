@@ -56,16 +56,11 @@ public class HttpClient {
      * 从淘宝的API获取，服务稳定性上更具有保障。
      */
     public static String getCurrentIP() {
-        String s = get("http://ip.taobao.com/service/getIpInfo.php?ip=myip");
-
-        String keyWord = "{\"ip\":\"";
-
-        int start = s.indexOf(keyWord);
-        int end = s.indexOf("\",\"", start);
-
-        String substring = s.substring(start + keyWord.length(), end);
-
-        return substring;
+        String s = get("http://icanhazip.com");
+        if (s != null && s.length() > 0) {
+            return s.trim();
+        }
+        return s;
     }
 
     public static void main(String[] args) {
