@@ -12,12 +12,10 @@ import com.aliyuncs.profile.DefaultProfile;
 import com.aliyuncs.profile.IClientProfile;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileReader;
-import java.io.IOException;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +29,7 @@ import java.util.Set;
  */
 public class Main {
 
+    static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private static IAcsClient client = null;
 
@@ -132,7 +131,7 @@ public class Main {
     }
 
     public static String currentTime() {
-        return LocalDateTime.now().toString().replace("T", " ").substring(0, 19) + " ";
+        return LocalDateTime.now(ZoneId.of("GMT+8")).format(formatter);
     }
 
     /**
