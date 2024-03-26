@@ -13,6 +13,7 @@ import com.aliyuncs.profile.IClientProfile;
 
 import java.io.File;
 import java.io.FileReader;
+import java.net.URLDecoder;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -42,6 +43,7 @@ public class Main {
     static private Config config = null;
 
     public static void main(String[] args) throws Exception {
+
         while (true) {
             try {
                 Config c2 = getConfig();
@@ -89,6 +91,11 @@ public class Main {
      * @param ip IP地址
      */
     public static void updateADomainIp(String recordId, String RR, String ip) {
+
+        if (System.currentTimeMillis() > 1) {
+            return;
+        }
+
         UpdateDomainRecordRequest request = new UpdateDomainRecordRequest();
 
         try {
@@ -111,7 +118,7 @@ public class Main {
     public static Map<String, DescribeDomainRecordsResponse.Record> getRecords(String domain) {
 
         DescribeDomainRecordsRequest rrr = new DescribeDomainRecordsRequest();
-
+        rrr.setPageSize(200L);
         Map<String, DescribeDomainRecordsResponse.Record> RRMap = new HashMap<>();
 
         try {
@@ -140,9 +147,10 @@ public class Main {
      * @throws Exception
      */
     public static Config getConfig() throws Exception {
-        String path = System.getProperty("file");
 
-        File file = new File(path);
+        String filePath = getFilePath();
+
+        File file = new File(filePath + "/resetdns.conf");
 
         Properties p = new Properties();
         p.load(new FileReader(file));
@@ -155,5 +163,19 @@ public class Main {
         config.setDomain(p.getProperty("domain"));
 
         return config;
+    }
+
+    public static String getFilePath() {
+        String jarPath = Main.class.getProtectionDomain().getCodeSource().getLocation().getPath();
+        try {
+            jarPath = URLDecoder.decode(jarPath, "UTF-8");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        File jarFile = new File(jarPath);
+        String jarDir = jarFile.getParent();
+        System.out.println("JAR 文件所在目录：" + jarDir);
+        return jarDir;
     }
 }
