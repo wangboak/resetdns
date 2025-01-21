@@ -1,27 +1,20 @@
 package com.wangboak.resetdns.main;
 
-import com.aliyuncs.DefaultAcsClient;
-import com.aliyuncs.IAcsClient;
-import com.aliyuncs.alidns.model.v20150109.DescribeDomainRecordsRequest;
-import com.aliyuncs.alidns.model.v20150109.DescribeDomainRecordsResponse;
-import com.aliyuncs.alidns.model.v20150109.UpdateDomainRecordRequest;
-import com.aliyuncs.alidns.model.v20150109.UpdateDomainRecordResponse;
-import com.aliyuncs.exceptions.ClientException;
-import com.aliyuncs.exceptions.ServerException;
-import com.aliyuncs.profile.DefaultProfile;
-import com.aliyuncs.profile.IClientProfile;
-
 import java.io.File;
 import java.io.FileReader;
 import java.net.URLDecoder;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Properties;
-import java.util.Set;
+
+import com.aliyun.alidns20150109.Client;
+import com.aliyun.alidns20150109.models.DescribeDomainRecordsRequest;
+import com.aliyun.alidns20150109.models.DescribeDomainRecordsResponse;
+import com.aliyun.alidns20150109.models.DescribeDomainRecordsResponseBody;
+import com.aliyun.alidns20150109.models.UpdateDomainRecordRequest;
+import com.aliyun.alidns20150109.models.UpdateDomainRecordResponse;
 
 /**
  *
@@ -31,110 +24,87 @@ import java.util.Set;
 public class Main {
 
     static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
-    private static IAcsClient client = null;
-
-    /**
-     *  必填固定值，必须为“cn-hangzhou”
-     */
-    private static final String regionId = "cn-hangzhou";
-
-
+    private static Client client = null;
     static private Config config = null;
 
+    static {
+        try {
+            config = getConfig();
+            client = createClient();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public static void main(String[] args) throws Exception {
-
-        while (true) {
+        while (System.currentTimeMillis() > 0) {
             try {
-                Config c2 = getConfig();
-                if (config == null || !config.equals(c2)) {
-                    config = c2;
-                    IClientProfile profile = DefaultProfile.getProfile(regionId, config.getAccessKey(), config.getSecretKey());
-                    client = new DefaultAcsClient(profile);
-                }
-
-                String currentIp = HttpClient.getCurrentIP();
-
-                Map<String, DescribeDomainRecordsResponse.Record> records = getRecords(config.getDomain());
-
-                Set<String> rrs = records.keySet();
-                for (String rr : rrs) {
-                    DescribeDomainRecordsResponse.Record record = records.get(rr);
-
-                    String recordId = record.getRecordId();
-                    String rrname = record.getRR();
-                    String ip = record.getValue();
-
-                    if (rrname.equalsIgnoreCase(config.getHostname())) {
-                        System.out.println(currentTime() + "当前真实IP：[" + currentIp + "]， " + config.getHostname() + "的A记录为：[" + ip + "]");
-                        if (!ip.equalsIgnoreCase(currentIp)) {
-                            updateADomainIp(recordId, rrname, currentIp);
-                            System.out.println(currentTime() + "IP不一致，已经更新DNS记录");
-                        }
-                    }
-                }
-
+                // 检查并更新IP
+                checkAndUpdateIp();
                 // sleep 10 分钟
                 Thread.sleep(1000 * 60 * 10);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
         }
-
     }
 
+    /**
+     * 检查并更新IP
+     * @throws Exception
+     */
+    private static void checkAndUpdateIp() throws Exception {
+        String currentIp = getCurrentIP();
+        DescribeDomainRecordsResponseBody.DescribeDomainRecordsResponseBodyDomainRecordsRecord record = getRecords(config);
+        String value = record.getValue();
+
+        if (currentIp.equals(value)) {
+            System.out.println(currentTime() + " [" + currentIp + "] IP地址没有变化，不需要更新。");
+        } else {
+            updateADomainIp(record, currentIp);
+        }
+    }
 
     /**
      * 更新主机名的A记录IP
-     * @param recordId 记录ID
-     * @param RR 主机名
-     * @param ip IP地址
      */
-    public static void updateADomainIp(String recordId, String RR, String ip) {
-
-        if (System.currentTimeMillis() > 1) {
-            return;
-        }
-
+    public static void updateADomainIp(DescribeDomainRecordsResponseBody.DescribeDomainRecordsResponseBodyDomainRecordsRecord record,
+            String newIp) {
         UpdateDomainRecordRequest request = new UpdateDomainRecordRequest();
 
         try {
-            request.setRecordId(recordId);
+            request.setRecordId(record.getRecordId());
             request.setType("A");
-            request.setRR(RR);
-            request.setValue(ip);
-
-            UpdateDomainRecordResponse res = client.getAcsResponse(request);
+            request.setRR(record.getRR());
+            request.setValue(newIp);
+            UpdateDomainRecordResponse resp = client.updateDomainRecord(request);
+            System.out.println(currentTime() + " 更新成功, IP：[" + newIp + "]");
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-
     /**
-     * 获取所有记录信息
-     * @return
+     * 获取 对应hostname 对应的A记录。
+     * @return 返回对应的A记录
      */
-    public static Map<String, DescribeDomainRecordsResponse.Record> getRecords(String domain) {
+    public static DescribeDomainRecordsResponseBody.DescribeDomainRecordsResponseBodyDomainRecordsRecord getRecords(Config config) throws Exception {
+        Client client = createClient();
 
-        DescribeDomainRecordsRequest rrr = new DescribeDomainRecordsRequest();
-        rrr.setPageSize(200L);
-        Map<String, DescribeDomainRecordsResponse.Record> RRMap = new HashMap<>();
+        DescribeDomainRecordsRequest req = new DescribeDomainRecordsRequest();
+        req.setDomainName(config.getDomain());
+        req.setRRKeyWord(config.getHostname());
+        req.setType("A");
 
-        try {
-            rrr.setDomainName(domain);
+        DescribeDomainRecordsResponse resp = client.describeDomainRecords(req);
+        DescribeDomainRecordsResponseBody data = resp.getBody();
 
-            DescribeDomainRecordsResponse acsResponse = client.getAcsResponse(rrr);
-            List<DescribeDomainRecordsResponse.Record> domainRecords = acsResponse.getDomainRecords();
-            for (DescribeDomainRecordsResponse.Record r : domainRecords) {
-                RRMap.put(r.getRecordId(), r);
-            }
-        } catch (ServerException e) {
-            e.printStackTrace();
-        } catch (ClientException e) {
-            e.printStackTrace();
-        }
-        return RRMap;
+        DescribeDomainRecordsResponseBody.DescribeDomainRecordsResponseBodyDomainRecords records =
+                data.getDomainRecords();
+
+        List<DescribeDomainRecordsResponseBody.DescribeDomainRecordsResponseBodyDomainRecordsRecord> record = records.getRecord();
+
+        return record.get(0);
     }
 
     public static String currentTime() {
@@ -177,5 +147,43 @@ public class Main {
         String jarDir = jarFile.getParent();
         System.out.println("JAR 文件所在目录：" + jarDir);
         return jarDir;
+    }
+
+    /**
+     * 创建阿里云DNS客户端
+     * @return
+     */
+    public static com.aliyun.alidns20150109.Client createClient() {
+        if (client != null) {
+            return client;
+        }
+
+        String accessKey = config.getAccessKey();
+        String secretKey = config.getSecretKey();
+
+        com.aliyun.teaopenapi.models.Config config = new com.aliyun.teaopenapi.models.Config()
+                .setAccessKeyId(accessKey)
+                .setAccessKeySecret(secretKey);
+        config.endpoint = "alidns.cn-hangzhou.aliyuncs.com";
+
+        try {
+            client = new Client(config);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+        return client;
+    }
+
+    /**
+     * 获取当前IP.
+     * 从淘宝的API获取，服务稳定性上更具有保障。
+     */
+    public static String getCurrentIP() {
+        String s = HttpClient.get("http://icanhazip.com");
+        if (s != null && !s.isEmpty()) {
+            return s.trim();
+        }
+        return s;
     }
 }

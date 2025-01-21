@@ -50,20 +50,4 @@ public class HttpClient {
         }
         return null;
     }
-
-    /**
-     * 获取当前IP.
-     * 从淘宝的API获取，服务稳定性上更具有保障。
-     */
-    public static String getCurrentIP() {
-        String s = get("http://icanhazip.com");
-        if (s != null && s.length() > 0) {
-            return s.trim();
-        }
-        return s;
-    }
-
-    public static void main(String[] args) {
-        System.out.println(getCurrentIP());
-    }
 }
