@@ -225,7 +225,8 @@ public class Main {
      * 从淘宝的API获取，服务稳定性上更具有保障。
      */
     public static String getCurrentIP() {
-        String s = HttpClient.get("http://icanhazip.com");
+        // 参考： https://api.ipify.org, https://ddns.oray.com/checkip, https://ip.3322.net, https://4.ipw.cn, https://v4.yinghualuo.cn/bejson
+        String s = HttpClient.get("https://4.ipw.cn");
         if (s != null && !s.isEmpty()) {
             return s.trim();
         }
