@@ -55,8 +55,8 @@ public class Main {
             try {
                 // 检查并更新IP
                 checkAndUpdateIp();
-                // sleep 10 分钟
-                Thread.sleep(1000 * 60 * 10);
+                // sleep 3 分钟
+                Thread.sleep(1000 * 60 * 3);// 3分钟 检测一次。
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
