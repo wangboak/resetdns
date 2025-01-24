@@ -6,15 +6,22 @@ import java.net.URLDecoder;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.TimeUnit;
 
 import com.aliyun.alidns20150109.Client;
+import com.aliyun.alidns20150109.models.DescribeDomainRecordInfoRequest;
+import com.aliyun.alidns20150109.models.DescribeDomainRecordInfoResponse;
 import com.aliyun.alidns20150109.models.DescribeDomainRecordsRequest;
 import com.aliyun.alidns20150109.models.DescribeDomainRecordsResponse;
 import com.aliyun.alidns20150109.models.DescribeDomainRecordsResponseBody;
 import com.aliyun.alidns20150109.models.UpdateDomainRecordRequest;
 import com.aliyun.alidns20150109.models.UpdateDomainRecordResponse;
+
+import lombok.Data;
 
 /**
  *
@@ -25,19 +32,26 @@ public class Main {
 
     static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static Client client = null;
-    static private Config config = null;
+    private static Config config = null;
+
+    static String recordId = null;
+
+    private static final long UPDATE_INTERVAL = 1000 * 60 * 60; // 1 小时
+
+    private static Map<String, RecordCacheDTO> cacheMap = new HashMap<>();
 
     static {
         try {
             config = getConfig();
             client = createClient();
+            recordId = getRecordId();
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
 
     public static void main(String[] args) throws Exception {
-        while (System.currentTimeMillis() > 0) {
+        for (int i = 0; i < 1000 * 1000; i++) {
             try {
                 // 检查并更新IP
                 checkAndUpdateIp();
@@ -53,29 +67,31 @@ public class Main {
      * 检查并更新IP
      * @throws Exception
      */
-    private static void checkAndUpdateIp() throws Exception {
-        String currentIp = getCurrentIP();
-        DescribeDomainRecordsResponseBody.DescribeDomainRecordsResponseBodyDomainRecordsRecord record = getRecords(config);
-        String value = record.getValue();
+    private static void checkAndUpdateIp() {
+        try {
+            String realIp = getCurrentIP();
+            String value = getRecordIp(config);
 
-        if (currentIp.equals(value)) {
-            System.out.println(currentTime() + " [" + currentIp + "] IP地址没有变化，不需要更新。");
-        } else {
-            updateADomainIp(record, currentIp);
+            if (realIp.equals(value)) {
+                System.out.println(currentTime() + " [" + realIp + "] IP地址没有变化，不需要更新。");
+            } else {
+                updateADomainIp(recordId, "A", config.getHostname(), realIp);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
     /**
      * 更新主机名的A记录IP
      */
-    public static void updateADomainIp(DescribeDomainRecordsResponseBody.DescribeDomainRecordsResponseBodyDomainRecordsRecord record,
-            String newIp) {
+    public static void updateADomainIp(String recordId, String type, String hostName, String newIp) {
         UpdateDomainRecordRequest request = new UpdateDomainRecordRequest();
 
         try {
-            request.setRecordId(record.getRecordId());
-            request.setType("A");
-            request.setRR(record.getRR());
+            request.setRecordId(recordId);
+            request.setType(type);
+            request.setRR(hostName);
             request.setValue(newIp);
             UpdateDomainRecordResponse resp = client.updateDomainRecord(request);
             System.out.println(currentTime() + " 更新成功, IP：[" + newIp + "]");
@@ -88,9 +104,38 @@ public class Main {
      * 获取 对应hostname 对应的A记录。
      * @return 返回对应的A记录
      */
-    public static DescribeDomainRecordsResponseBody.DescribeDomainRecordsResponseBodyDomainRecordsRecord getRecords(Config config) throws Exception {
-        Client client = createClient();
+    public static String getRecordIp(Config config) throws Exception {
+        String hostname = config.getHostname() + "." + config.getDomain();
+        RecordCacheDTO cacheDTO = cacheMap.get(hostname);
+        if (cacheDTO != null) {
+            if (System.currentTimeMillis() - cacheDTO.getUpdateTime() < TimeUnit.MINUTES.toMillis(59)) {
+                return cacheDTO.getIp();
+            }
+        }
 
+        DescribeDomainRecordInfoResponse response = client.describeDomainRecordInfo(
+                new DescribeDomainRecordInfoRequest().setRecordId(recordId)
+        );
+
+        String ip = response.getBody().getValue();
+
+        {
+            RecordCacheDTO recordCache = new RecordCacheDTO();
+            recordCache.setIp(ip);
+            recordCache.setUpdateTime(System.currentTimeMillis());
+            cacheMap.put(hostname, recordCache);
+        }
+
+        return ip;
+    }
+
+    /**
+     * 获取记录ID
+     * @return 返回记录ID
+     * @throws Exception 异常
+     */
+    private static String getRecordId() throws Exception {
+        Client client = createClient();
         DescribeDomainRecordsRequest req = new DescribeDomainRecordsRequest();
         req.setDomainName(config.getDomain());
         req.setRRKeyWord(config.getHostname());
@@ -98,13 +143,13 @@ public class Main {
 
         DescribeDomainRecordsResponse resp = client.describeDomainRecords(req);
         DescribeDomainRecordsResponseBody data = resp.getBody();
-
         DescribeDomainRecordsResponseBody.DescribeDomainRecordsResponseBodyDomainRecords records =
                 data.getDomainRecords();
-
-        List<DescribeDomainRecordsResponseBody.DescribeDomainRecordsResponseBodyDomainRecordsRecord> record = records.getRecord();
-
-        return record.get(0);
+        List<DescribeDomainRecordsResponseBody.DescribeDomainRecordsResponseBodyDomainRecordsRecord> recordList =
+                records.getRecord();
+        DescribeDomainRecordsResponseBody.DescribeDomainRecordsResponseBodyDomainRecordsRecord record = recordList.get(0);
+        recordId = record.getRecordId();
+        return recordId;
     }
 
     public static String currentTime() {
@@ -113,8 +158,8 @@ public class Main {
 
     /**
      * 获取配置文件内容
-     * @return
-     * @throws Exception
+     * @return 返回配置文件内容
+     * @throws Exception 异常
      */
     public static Config getConfig() throws Exception {
 
@@ -185,5 +230,11 @@ public class Main {
             return s.trim();
         }
         return s;
+    }
+
+    @Data
+    private static class RecordCacheDTO {
+        private String ip;
+        private Long updateTime;
     }
 }
