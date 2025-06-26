@@ -226,7 +226,7 @@ public class Main {
      */
     public static String getCurrentIP() {
         // 参考： https://api.ipify.org, https://ddns.oray.com/checkip, https://ip.3322.net, https://4.ipw.cn, https://v4.yinghualuo.cn/bejson
-        String s = HttpClient.get("https://ip.wangboak.com/");
+        String s = HttpClient.get("https://4.ipw.cn");
         if (s != null && !s.isEmpty()) {
             return s.trim();
         }
